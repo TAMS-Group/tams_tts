@@ -8,6 +8,7 @@
 import rospy
 from audio_common_msgs.msg import AudioData
 from std_msgs.msg import String as StringMsg
+from std_msgs.msg import Bool as BoolMsg
 
 from TTS.api import TTS
 
@@ -39,6 +40,8 @@ class TTSNode:
         self.tts = TTS(model_name)
 
         self.pub = rospy.Publisher('audio', AudioData, queue_size=1, latch= True)
+        self.pubStatus = rospy.Publisher('Robot_is_speaking', BoolMsg, queue_size=0, latch=True)
+
 
         if rospy.get_param('~demo', False):
             self.demo_speakers()
@@ -61,8 +64,14 @@ class TTSNode:
             data_header_length = len('data') + 4
             f.seek(f.getvalue().find(b'data')+data_header_length)
             msg.data = f.read()
+
+        duration = rospy.Duration(wav.shape[0]/16000)
+        self.pubStatus.publish(True)
         self.pub.publish(msg)
-        return rospy.Duration(wav.shape[0]/16000)
+        rospy.sleep(duration)
+        self.pubStatus.publish(False)
+        
+        return duration
 
     def demo_speakers(self):
         import random
