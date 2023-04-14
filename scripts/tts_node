@@ -40,8 +40,7 @@ class TTSNode:
         self.tts = TTS(model_name)
 
         self.pub = rospy.Publisher('audio', AudioData, queue_size=1, latch= True)
-        self.pubStatus = rospy.Publisher('Robot_is_speaking', BoolMsg, queue_size=0, latch=True)
-
+        self.pubStatus = rospy.Publisher('is_speaking', BoolMsg, queue_size=0, latch=True)
 
         if rospy.get_param('~demo', False):
             self.demo_speakers()
