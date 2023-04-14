@@ -41,6 +41,7 @@ class TTSNode:
 
         self.pub = rospy.Publisher('audio', AudioData, queue_size=1, latch= True)
         self.pubStatus = rospy.Publisher('is_speaking', BoolMsg, queue_size=0, latch=True)
+        self.stopTalkingTimer = None
 
         if rospy.get_param('~demo', False):
             self.demo_speakers()
@@ -54,7 +55,11 @@ class TTSNode:
     def speak(self, txt):
         with nostdout():
           wav = np.array(self.tts.tts(txt, speaker=self.speaker))
-        wav = sps.resample(wav, int(16000*len(wav)/22050))
+        MODEL_OUTPUT_RATE = 22050
+        OUTPUT_RATE = 16000
+        wav = sps.resample(wav, int(OUTPUT_RATE*len(wav)/MODEL_OUTPUT_RATE))
+        duration = rospy.Duration(wav.shape[0]/OUTPUT_RATE)
+
         msg = AudioData()
         with io.BytesIO() as f:
             # highjack TTS's wav generation for data serialization
@@ -64,13 +69,17 @@ class TTSNode:
             f.seek(f.getvalue().find(b'data')+data_header_length)
             msg.data = f.read()
 
-        duration = rospy.Duration(wav.shape[0]/16000)
+        if self.stopTalkingTimer is not None:
+            self.stopTalkingTimer.shutdown()
         self.pubStatus.publish(True)
         self.pub.publish(msg)
-        rospy.sleep(duration)
-        self.pubStatus.publish(False)
+        self.stopTalkingTimer = rospy.Timer(duration, self.stoppedTalking, oneshot=True)
         
         return duration
+
+    def stoppedTalking(self, event):
+        self.pubStatus.publish(False)
+        self.stopTalkingTimer = None
 
     def demo_speakers(self):
         import random
