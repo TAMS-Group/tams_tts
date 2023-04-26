@@ -50,11 +50,12 @@ class TTSNode:
         rospy.loginfo("TTS initialized")
 
     def cb(self, msg):
-        self.speak(msg.data)   
+        if msg.data:
+            self.speak(msg.data)
 
     def speak(self, txt):
         with nostdout():
-          wav = np.array(self.tts.tts(txt, speaker=self.speaker))
+          wav = np.array(self.tts.tts(text=txt, speaker=self.speaker))
         MODEL_OUTPUT_RATE = 22050
         OUTPUT_RATE = 16000
         wav = sps.resample(wav, int(OUTPUT_RATE*len(wav)/MODEL_OUTPUT_RATE))
