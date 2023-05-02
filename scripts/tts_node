@@ -15,8 +15,11 @@ from TTS.api import TTS
 import numpy as np
 import scipy.signal as sps
 
+from threading import Lock, Thread
+from collections import namedtuple
 import struct
 import io
+import re
 
 # context to silence stdout of library calls
 import contextlib
@@ -43,6 +46,10 @@ class TTSNode:
         self.pubStatus = rospy.Publisher('is_speaking', BoolMsg, queue_size=0, latch=True)
         self.stopTalkingTimer = None
 
+        self.lock = Lock()
+        self.QueueItem = namedtuple('QueueItem', ['msg', 'duration'])
+        self.play_queue = []
+
         if rospy.get_param('~demo', False):
             self.demo_speakers()
         else:
@@ -50,8 +57,10 @@ class TTSNode:
         rospy.loginfo("TTS initialized")
 
     def cb(self, msg):
-        if msg.data:
-            self.speak(msg.data)
+        sentences = re.split(r'(?<=[.!?]) *', msg.data)
+        for s in sentences:
+            if not re.match('^[ \t\n]*$', s):
+                self.speak(s)
 
     def speak(self, txt):
         with nostdout():
@@ -70,17 +79,29 @@ class TTSNode:
             f.seek(f.getvalue().find(b'data')+data_header_length)
             msg.data = f.read()
 
-        if self.stopTalkingTimer is not None:
-            self.stopTalkingTimer.shutdown()
-        self.pubStatus.publish(True)
-        self.pub.publish(msg)
-        self.stopTalkingTimer = rospy.Timer(duration, self.stoppedTalking, oneshot=True)
-        
+        with self.lock:
+            self.play_queue.append(self.QueueItem(msg, duration))
+            if len(self.play_queue) == 1 and self.stopTalkingTimer is None:
+                Thread(target= self.talk).start()
         return duration
 
+    def talk(self):
+        with self.lock:
+            if len(self.play_queue) > 0:
+                item = self.play_queue.pop(0)
+                if self.stopTalkingTimer is not None:
+                    self.stopTalkingTimer.shutdown()
+                self.pubStatus.publish(True)
+                self.pub.publish(item.msg)
+                self.stopTalkingTimer = rospy.Timer(item.duration, self.stoppedTalking, oneshot=True)
+
     def stoppedTalking(self, event):
-        self.pubStatus.publish(False)
-        self.stopTalkingTimer = None
+        with self.lock:
+            if len(self.play_queue) > 0:
+                Thread(target= self.talk).start()
+            else:
+                self.pubStatus.publish(False)
+                self.stopTalkingTimer = None
 
     def demo_speakers(self):
         import random
